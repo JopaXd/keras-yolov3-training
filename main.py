@@ -1,11 +1,11 @@
 from multiprocessing.dummy import Pool as ThreadPool
+from itertools import islice
 from tqdm import tqdm
-import numpy as np
+import pandas as pd
 import urllib3
 import shutil
 import os
 import shlex
-import csv
 import cv2
 
 TRAIN_ANNOTATIONS = "https://storage.googleapis.com/openimages/v6/oidv6-train-annotations-bbox.csv"
@@ -68,30 +68,14 @@ def get_class_descriptions():
 def get_ids_from_class_names(classes):
 	#Gets the ids that belong to the classes.
 	ids = {}
-	with open(f"{DATA_PATH}/{CLASS_DESCRIPTIONS_FILE_NAME}") as class_desc:
-		csv_reader = csv.reader(class_desc, delimiter=",")
-		for cclass in classes:
-			for row in csv_reader:
-				if row[1] == cclass:
-					ids[row[1]] = row[0]
-					break
-	class_desc.close()
+	class_descriptions = pd.read_csv(f"{DATA_PATH}/{CLASS_DESCRIPTIONS_FILE_NAME}", header=None)
+	rows = [list(x) for i, x in class_descriptions.iterrows()]
+	for cclass in classes:
+		for row in rows:
+			if row[1] == cclass:
+				ids[row[1]] = row[0]
+				break
 	return ids
-
-
-def read_in_chunks(reader, chunksize=1024):
-    chunk = []
-    for i, line in enumerate(reader):
-        if (i % chunksize == 0 and i > 0):
-            yield chunk
-            del chunk[:]
-        chunk.append(line)
-    yield chunk
-
-
-def label_items(arr):
-    vals,labels = np.unique(arr, return_inverse=True)
-    return list(labels)
 
 #Creates the text files necessary for training the model.
 def create_train_files(img_list, class_list):
@@ -108,46 +92,46 @@ def create_train_files(img_list, class_list):
 def download_images(ids, images_per_class, class_list):
 	#Downloads the images for the dataset.
 	img_list = []
-	class_labels = label_items(class_list) 
-	with open(f"{DATA_PATH}/{TRAIN_ANNOTATIONS_FILE_NAME}") as train_annotations:
-		for img_class, class_id in ids.items():
-			pool = ThreadPool(20)
-			command_list = []
-			img_count = 0
-			csv_reader = csv.reader(train_annotations, delimiter=",")
-			for chunk in read_in_chunks(csv_reader):
+	class_labels = list(range(0, len(class_list)))
+	img_data = pd.read_csv(f"{DATA_PATH}/{TRAIN_ANNOTATIONS_FILE_NAME}", chunksize=1024, header=None)
+	for img_class, class_id in ids.items():
+		pool = ThreadPool(20)
+		command_list = []
+		img_count = 0
+		for chunk in img_data:
+			if img_count == images_per_class:
+				break
+			for i, df_row in islice(chunk.iterrows(), 1, None):
+				row = list(df_row)
 				if img_count == images_per_class:
 					break
-				for row in chunk:
-					if img_count == images_per_class:
-						break
-					if row[2] == class_id:
-						same_image = False
-						#Processing has to be done here.
-						XMin = row[4]
-						XMax = row[5]
-						YMin = row[6]
-						YMax = row[7]
-						image_id = row[0]
-						for img in img_list:
-							if img.image_id == image_id:
-								img.bounding_boxes.append([XMin, YMin, XMax, YMax])
-								same_image = True
-								break
-						if not same_image:
-							new_img = ClassImage()
-							new_img.image_id = image_id
-							new_img.class_name = img_class
-							new_img.class_label = class_labels[class_list.index(img_class)]
-							new_img.image_path = os.path.abspath(f"{DATASET_PATH}/train/{img_class}/{image_id}.jpg")
-							new_img.bounding_boxes.append([XMin, YMin, XMax, YMax])
-							img_list.append(new_img)
-							img_count+=1
-							command = f"aws s3 --no-sign-request --only-show-errors cp s3://open-images-dataset/train/{image_id}.jpg {DATASET_PATH}/train/{img_class}"
-							command_list.append(command)
-			list(tqdm(pool.imap(os.system, command_list), total = len(command_list) ))
-			pool.close()
-			pool.join()
+				if row[2] == class_id:
+					same_image = False
+					#Processing has to be done here.
+					XMin = row[4]
+					XMax = row[5]
+					YMin = row[6]
+					YMax = row[7]
+					image_id = row[0]
+					for img in img_list:
+						if img.image_id == image_id:
+							img.bounding_boxes.append([XMin, YMin, XMax, YMax])
+							same_image = True
+							break
+					if not same_image:
+						new_img = ClassImage()
+						new_img.image_id = image_id
+						new_img.class_name = img_class
+						new_img.class_label = class_labels[class_list.index(img_class)]
+						new_img.image_path = os.path.abspath(f"{DATASET_PATH}/train/{img_class}/{image_id}.jpg")
+						new_img.bounding_boxes.append([XMin, YMin, XMax, YMax])
+						img_list.append(new_img)
+						img_count+=1
+						command = f"aws s3 --no-sign-request --only-show-errors cp s3://open-images-dataset/train/{image_id}.jpg {DATASET_PATH}/train/{img_class}"
+						command_list.append(command)
+		list(tqdm(pool.imap(os.system, command_list), total = len(command_list) ))
+		pool.close()
+		pool.join()
 	for img in img_list:
 		#Make sure the coords for the bounding boxes are in correct format at the end.
 		#For this to work, the images must be downloaded, that's why we're doing it here.
