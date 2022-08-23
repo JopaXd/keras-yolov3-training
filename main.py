@@ -93,8 +93,16 @@ def label_items(arr):
     vals,labels = np.unique(arr, return_inverse=True)
     return list(labels)
 
-def create_train_files(img_list):
-	pass	
+#Creates the text files necessary for training the model.
+def create_train_files(img_list, class_list):
+		with open("class_list.txt", "w") as classes_file:
+			for c in class_list:
+				classes_file.write(f"{c}\n")
+		classes_file.close()
+		with open("data.txt", "w") as data:
+			for img in img_list:
+				data.write(f"{str(img)}\n")
+		data.close()
 
 #Need to optimize this.
 def download_images(ids, images_per_class, class_list):
@@ -179,7 +187,11 @@ def main():
 				os.mkdir(f"{DATA_PATH}/dataset/train/{cl}")
 		ids = get_ids_from_class_names(class_list)
 		num_of_images = int(input("How many images do you want to download per class?: "))
+		print("Downloading images...")
 		downloaded_images = download_images(ids, num_of_images, class_list)
+		print("Creating train files...")
+		create_train_files(downloaded_images, class_list)
+		print("Done!")
 
 if __name__ == "__main__":
 	main()
