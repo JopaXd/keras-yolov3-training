@@ -155,6 +155,10 @@ def download_images(ids, images_per_class, class_list):
 	return img_list
 
 def main():
+	#Make sure AWS CLI is installed.
+	if not shutil.which("aws"):
+		print("AWS CLI is not installed or not in PATH! Please install AWS CLI and add it to PATH to proceed.")
+		return
 	#Just make sure the data path exists.
 	if not os.path.exists(DATA_PATH):
 		os.mkdir(DATA_PATH)
