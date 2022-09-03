@@ -46,7 +46,6 @@ class ClassImage:
 		#The last character is a leftover space from the for loop, we get rid of that with [:-1].
 		return bboxes[:-1]
 
-
 	def __str__(self):
 		return f"{self.image_path} {self._get_bounding_boxes_and_label_str()}"
 
@@ -84,6 +83,10 @@ def create_train_files(img_list, class_list):
 			for img in img_list:
 				data.write(f"{str(img)}\n")
 		data.close()
+
+def get_oidv_classes():
+	class_descriptions = pd.read_csv(f"{DATA_PATH}/{CLASS_DESCRIPTIONS_FILE_NAME}", header=None)
+	return class_descriptions[1].tolist()
 
 #Downloads the images for the dataset.
 def download_images(ids, images_per_class, class_list):
@@ -169,6 +172,22 @@ def main():
 	classes = input('List the classes you want to train (if a class contains multiple words in the name, use quotes, "Pencil sharpener"): ')
 	if classes != "":
 		class_list = shlex.split(classes)
+		#Probably an overthought way of making the first character upper-case for every class.
+		class_list = [x[0].upper() + x[1:] for x in class_list]
+		oidv_classes = get_oidv_classes()
+		#Check for invalid classes.
+		invalid_classes = []
+		for cl in class_list:
+			if cl not in oidv_classes:
+				invalid_classes.append(cl)
+		if len(invalid_classes) > 0:
+			print(f"The following classes are invalid: {' '.join(invalid_classes)}")
+			for inv_cl in invalid_classes:
+				if inv_cl in class_list:
+					class_list.remove(inv_cl)
+		if len(class_list) == 0:
+			print("No valid classes were listed! Exiting...")
+			return
 		if not os.path.exists(f"{DATA_PATH}/dataset"):
 			os.mkdir(f"{DATA_PATH}/dataset")
 			os.mkdir(f"{DATA_PATH}/dataset/train")
