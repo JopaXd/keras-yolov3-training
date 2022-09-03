@@ -1,11 +1,8 @@
 from multiprocessing.dummy import Pool as ThreadPool
 from itertools import islice
 from tqdm import tqdm
+import urllib3, shutil, os, shlex
 import pandas as pd
-import urllib3
-import shutil
-import os
-import shlex
 import cv2
 
 TRAIN_ANNOTATIONS = "https://storage.googleapis.com/openimages/v6/oidv6-train-annotations-bbox.csv"
@@ -88,12 +85,16 @@ def create_train_files(img_list, class_list):
 				data.write(f"{str(img)}\n")
 		data.close()
 
-#Need to optimize this.
+#Downloads the images for the dataset.
 def download_images(ids, images_per_class, class_list):
-	#Downloads the images for the dataset.
 	img_list = []
 	class_labels = list(range(0, len(class_list)))
 	img_data = pd.read_csv(f"{DATA_PATH}/{TRAIN_ANNOTATIONS_FILE_NAME}", chunksize=1024, header=None)
+	already_downloaded_images = []
+	#Have to check if any of the images are already downloaded.
+	for cl in class_list:
+		for image in os.listdir(f"{DATA_PATH}/dataset/train/{cl}"):
+			already_downloaded_images.append(image.split(".")[0])
 	for img_class, class_id in ids.items():
 		pool = ThreadPool(20)
 		command_list = []
@@ -127,8 +128,9 @@ def download_images(ids, images_per_class, class_list):
 						new_img.bounding_boxes.append([XMin, YMin, XMax, YMax])
 						img_list.append(new_img)
 						img_count+=1
-						command = f"aws s3 --no-sign-request --only-show-errors cp s3://open-images-dataset/train/{image_id}.jpg {DATASET_PATH}/train/{img_class}"
-						command_list.append(command)
+						if image_id not in already_downloaded_images:
+							command = f"aws s3 --no-sign-request --only-show-errors cp s3://open-images-dataset/train/{image_id}.jpg {DATASET_PATH}/train/{img_class}"
+							command_list.append(command)
 		list(tqdm(pool.imap(os.system, command_list), total = len(command_list) ))
 		pool.close()
 		pool.join()
