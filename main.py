@@ -1,9 +1,8 @@
 from multiprocessing.dummy import Pool as ThreadPool
 from itertools import islice
 from tqdm import tqdm
-import urllib3, shutil, os, shlex
+import urllib3, shutil, os, shlex, cv2
 import pandas as pd
-import cv2
 
 TRAIN_ANNOTATIONS = "https://storage.googleapis.com/openimages/v6/oidv6-train-annotations-bbox.csv"
 # V5 because this file is most likely the same for V6.
@@ -92,37 +91,38 @@ def get_oidv_classes():
 def download_images(ids, images_per_class, class_list):
 	img_list = []
 	class_labels = list(range(0, len(class_list)))
-	img_data = pd.read_csv(f"{DATA_PATH}/{TRAIN_ANNOTATIONS_FILE_NAME}", chunksize=1024, header=None)
+	img_data = pd.read_csv(f"{DATA_PATH}/{TRAIN_ANNOTATIONS_FILE_NAME}", chunksize=1000000, header=None)
 	already_downloaded_images = []
-	#Have to check if any of the images are already downloaded.
+	num_of_images_to_download_for_class = {}
 	for cl in class_list:
+		num_of_images_to_download_for_class[cl] = images_per_class
 		for image in os.listdir(f"{DATA_PATH}/dataset/train/{cl}"):
 			already_downloaded_images.append(image.split(".")[0])
-	for img_class, class_id in ids.items():
-		pool = ThreadPool(20)
-		command_list = []
-		img_count = 0
-		for chunk in img_data:
-			if img_count == images_per_class:
-				break
-			for i, df_row in islice(chunk.iterrows(), 1, None):
-				row = list(df_row)
-				if img_count == images_per_class:
-					break
+	command_list = []
+	pool = ThreadPool(20)
+	for chunk in img_data:
+		for i, df_row in islice(chunk.iterrows(), 1, None):
+			row = list(df_row)
+			if row[2] not in list(ids.values()):
+				continue
+			for img_class, class_id in ids.items():
+				if num_of_images_to_download_for_class[img_class] == 0:
+					continue
 				if row[2] == class_id:
 					same_image = False
-					#Processing has to be done here.
 					XMin = row[4]
 					XMax = row[5]
 					YMin = row[6]
 					YMax = row[7]
 					image_id = row[0]
 					for img in img_list:
+						#Same image, just bounding box for another item in the image.
 						if img.image_id == image_id:
 							img.bounding_boxes.append([XMin, YMin, XMax, YMax])
 							same_image = True
 							break
 					if not same_image:
+						#New image, add it to the list, and check if its already downloaded.
 						new_img = ClassImage()
 						new_img.image_id = image_id
 						new_img.class_name = img_class
@@ -130,13 +130,20 @@ def download_images(ids, images_per_class, class_list):
 						new_img.image_path = os.path.abspath(f"{DATASET_PATH}/train/{img_class}/{image_id}.jpg")
 						new_img.bounding_boxes.append([XMin, YMin, XMax, YMax])
 						img_list.append(new_img)
-						img_count+=1
+						num_of_images_to_download_for_class[img_class]-=1
+						print(num_of_images_to_download_for_class[img_class])
 						if image_id not in already_downloaded_images:
+							#Image has not been downloaded already.
 							command = f"aws s3 --no-sign-request --only-show-errors cp s3://open-images-dataset/train/{image_id}.jpg {DATASET_PATH}/train/{img_class}"
 							command_list.append(command)
+		print("a")
+		if sum(list(num_of_images_to_download_for_class.values())) == 0:
+			#All images have been added.
+			break
+	if len(command_list) != 0:
 		list(tqdm(pool.imap(os.system, command_list), total = len(command_list) ))
-		pool.close()
-		pool.join()
+	pool.close()
+	pool.join()
 	for img in img_list:
 		#Make sure the coords for the bounding boxes are in correct format at the end.
 		#For this to work, the images must be downloaded, that's why we're doing it here.
