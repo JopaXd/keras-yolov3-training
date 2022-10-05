@@ -131,12 +131,10 @@ def download_images(ids, images_per_class, class_list):
 						new_img.bounding_boxes.append([XMin, YMin, XMax, YMax])
 						img_list.append(new_img)
 						num_of_images_to_download_for_class[img_class]-=1
-						print(num_of_images_to_download_for_class[img_class])
 						if image_id not in already_downloaded_images:
 							#Image has not been downloaded already.
 							command = f"aws s3 --no-sign-request --only-show-errors cp s3://open-images-dataset/train/{image_id}.jpg {DATASET_PATH}/train/{img_class}"
 							command_list.append(command)
-		print("a")
 		if sum(list(num_of_images_to_download_for_class.values())) == 0:
 			#All images have been added.
 			break
