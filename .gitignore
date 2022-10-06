@@ -162,5 +162,8 @@ cython_debug/
 #Project-related
 
 data/
+logs/
 class_list.txt
 data.txt
+model_data/yolov3.weights
+model_data/yolo_weights.h5

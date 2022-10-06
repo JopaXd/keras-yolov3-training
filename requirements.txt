@@ -1,3 +1,6 @@
 tqdm
 opencv-contrib-python
 pandas
+numpy
+tensorflow
+keras
